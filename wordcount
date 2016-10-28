@@ -1,0 +1,105 @@
+package com.md.bigdata.wtMR;
+
+import java.io.IOException;
+import java.util.Iterator;
+
+import net.sf.json.JSONArray;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.CellUtil;
+import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
+import org.apache.hadoop.hbase.mapreduce.TableMapReduceUtil;
+import org.apache.hadoop.hbase.mapreduce.TableMapper;
+import org.apache.hadoop.hbase.mapreduce.TableOutputFormat;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.Reducer.Context;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+import com.md.bigdata.mapreduce.ConfigProp;
+
+
+public class wordcount {
+        public static void main(String[] args) throws IOException, InterruptedException, ClassNotFoundException {
+                ConfigProp prop = new ConfigProp();
+                String tbName = prop.getHBASE_TABLE_NAME();
+//              Configuration conf = new Configuration();
+                Configuration conf = HBaseConfiguration.create();
+                conf.addResource("classpath:/hadoop/core-site.xml");
+                conf.addResource("classpath:/hadoop/hdfs-site.xml");
+                conf.addResource("classpath:/hadoop/mapred-site.xml");
+                Job job = Job.getInstance(conf, wordcount.class.getSimpleName());
+                job.setJarByClass(wordcount.class);
+//              job.setMapperClass(MyMapper.class);
+                job.setReducerClass(MyReducer.class);
+                Scan scan = new Scan();
+//              scan.setStartRow(Bytes.toBytes("152933"));
+//              scan.setStopRow(Bytes.toBytes("152934"));
+                scan.addColumn(Bytes.toBytes("info"), Bytes.toBytes("AUTHORADDRESS_tik"));
+                scan.setCacheBlocks(false);
+                scan.setCaching(100);
+                TableMapReduceUtil.initTableMapperJob(tbName, scan,MyMapper.class, Text.class, LongWritable.class, job);
+                job.setOutputKeyClass(LongWritable.class);   //Text.class
+                job.setOutputValueClass(Text.class);   //LongWritable.class
+//              String inputPath1 = "hdfs://masterserver:8020/var/test/test";
+                String outputPath = "hdfs://masterserver:8020/var/test/output3150w";
+//              FileInputFormat.setInputPaths(job, new Path(inputPath1));
+                FileOutputFormat.setOutputPath(job, new Path(outputPath));
+                System.exit(job.waitForCompletion(true) ? 0 : 1);
+        }
+
+        public static class MyMapper extends TableMapper<Text, LongWritable> {
+                Text k2 = new Text();
+                static LongWritable v2 = new LongWritable(1);
+
+                protected void map(ImmutableBytesWritable key, Result value, Context context) throws IOException, InterruptedException {
+
+                        Cell[] cells = value.rawCells();
+                        if (cells != null && cells.length > 0) {
+                                for (Cell cell : cells) {
+                                        String row = Bytes.toString(CellUtil.cloneRow(cell));
+                                        String address = Bytes.toString(CellUtil.cloneValue(cell));
+//                                      JSONArray deal_arr=WCdealData.commauthorDeal(address);
+                                        JSONArray deal_arr=WCdealData.parseMetaData(address);
+                                        for (Object word : deal_arr) {
+                                                String word1=word.toString().trim();
+                                                String word2=WCdealData.DealSymbol(word1);
+                                                k2.set(word2.trim());
+//                                              v2.set(1);
+                                                context.write(k2, v2);
+                                        }
+                                }
+                        }
+                }
+        }
+
+        public static class MyReducer extends Reducer<Text, LongWritable,LongWritable, Text> {
+                LongWritable v3 = new LongWritable();
+
+                protected void reduce(Text k2, Iterable<LongWritable> v2s, Context context) throws IOException, InterruptedException {
+                        long sum = 0;
+
+                        Iterator<LongWritable> iterable = v2s.iterator();
+                        while (iterable.hasNext()) {
+                                LongWritable v2 = iterable.next();
+                                sum += v2.get();
+                        }
+                        v3.set(sum);
+                        context.write(v3,k2 );
+                }
+        }
+
+
+
+}
